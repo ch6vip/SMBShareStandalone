@@ -28,33 +28,11 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Make gradlew executable
-        run: chmod +x gradlew 2>/dev/null || true
-
-      - name: Generate Gradle Wrapper
-        run: |
-          if [ ! -f gradlew ]; then
-            gradle wrapper --gradle-version 8.5
-          fi
-
       - name: Build Debug APK
-        run: ./gradlew assembleDebug --stacktrace
+        run: chmod +x gradlew && ./gradlew assembleDebug --stacktrace --no-daemon
 
       - name: Build Release APK
-        run: ./gradlew assembleRelease --stacktrace
-
-      - name: Sign APK (debug key fallback)
-        run: |
-          # 如果没有 release keystore，用 debug 签名 release APK
-          if [ -f app/build/outputs/apk/release/app-release-unsigned.apk ]; then
-            $ANDROID_HOME/build-tools/34.0.0/apksigner sign \
-              --ks $HOME/.android/debug.keystore \
-              --ks-pass pass:android \
-              --ks-key-alias androiddebugkey \
-              --key-pass pass:android \
-              --out app/build/outputs/apk/release/app-release.apk \
-              app/build/outputs/apk/release/app-release-unsigned.apk
-          fi
+        run: ./gradlew assembleRelease --stacktrace --no-daemon
 
       - name: Upload Debug APK
         uses: actions/upload-artifact@v4
@@ -66,7 +44,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: app-release
-          path: app/build/outputs/apk/release/app-release*.apk
+          path: app/build/outputs/apk/release/app-release-unsigned.apk
 
       - name: Upload Shell Scripts
         uses: actions/upload-artifact@v4
@@ -86,9 +64,6 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: artifacts
-
-      - name: List artifacts
-        run: ls -R artifacts/
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
