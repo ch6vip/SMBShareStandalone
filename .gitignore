@@ -1,0 +1,19 @@
+# 忽略构建产物
+.gradle/
+build/
+app/build/
+*.iml
+.idea/
+*.apk
+*.aab
+*.jks
+*.keystore
+local.properties
+
+# OS
+.DS_Store
+Thumbs.db
+
+# 日志
+*.log
+/captures

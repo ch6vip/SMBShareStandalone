@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">SMB Share</string>
+    <string name="smb_start">启动 SMB</string>
+    <string name="smb_stop">停止 SMB</string>
+    <string name="smb_status">状态</string>
+    <string name="smb_running">SMB 服务运行中</string>
+    <string name="smb_stopped">SMB 服务已停止</string>
+    <string name="smb_share_name">共享名称</string>
+    <string name="smb_share_path">共享路径</string>
+    <string name="smb_workgroup">工作组</string>
+    <string name="smb_install_deps">安装 SMB 依赖</string>
+    <string name="smb_downloading">下载中…</string>
+    <string name="smb_installing">安装中…</string>
+    <string name="smb_checking">检查中…</string>
+    <string name="notification_channel_name">SMB 服务</string>
+    <string name="notification_channel_desc">SMB 文件共享服务状态通知</string>
+    <string name="root_required">此应用需要 Root 权限才能运行 SMB 服务</string>
+    <string name="network_required">请先连接 WiFi</string>
+    <string name="device_ip">设备 IP: %1$s</string>
+    <string name="connect_info">在电脑地址栏输入: \\\\%1$s\\%2$s</string>
+</resources>
