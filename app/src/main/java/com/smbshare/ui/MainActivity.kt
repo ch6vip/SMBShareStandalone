@@ -1,6 +1,8 @@
 package com.smbshare.ui
 
 import android.Manifest
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.ComponentName
 import android.content.Intent
 import android.content.ServiceConnection
@@ -65,6 +67,8 @@ class MainActivity : AppCompatActivity() {
         get() = findViewById(R.id.progress_bar)
     private val layoutProgress: android.widget.LinearLayout?
         get() = findViewById(R.id.layout_progress)
+    private val btnCopyLog: com.google.android.material.button.MaterialButton?
+        get() = findViewById(R.id.btn_copy_log)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -91,6 +95,9 @@ class MainActivity : AppCompatActivity() {
         }
         btnInstall?.setOnClickListener {
             installDependencies()
+        }
+        btnCopyLog?.setOnClickListener {
+            copyLogToClipboard()
         }
     }
 
@@ -241,6 +248,14 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
+    }
+
+    private fun copyLogToClipboard() {
+        val logText = tvLog.text?.toString() ?: ""
+        val clipboard = getSystemService(android.content.Context.CLIPBOARD_SERVICE) as ClipboardManager
+        val clip = ClipData.newPlainText("SMB Share Log", logText)
+        clipboard.setPrimaryClip(clip)
+        Toast.makeText(this, "日志已复制到剪贴板", Toast.LENGTH_SHORT).show()
     }
 
     private fun appendLog(message: String) {
