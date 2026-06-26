@@ -190,7 +190,7 @@ class MainActivity : AppCompatActivity() {
                 } else {
                     MaterialAlertDialogBuilder(this@MainActivity)
                         .setTitle("安装失败")
-                        .setMessage("无法下载 SMB 组件，请检查网络连接")
+                        .setMessage("无法释放内置 SMB 组件，请确认已授予 Root 权限")
                         .setPositiveButton("确定", null)
                         .show()
                 }
