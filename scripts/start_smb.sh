@@ -110,16 +110,17 @@ SMBCONFEOF
 echo "[INFO] 配置文件: $SMB_CONFIG"
 
 # 启动 dbus-daemon
+# setsid 让 dbus 脱离当前会话, 脚本退出时不会被 SIGHUP 连带杀掉
 echo "[STEP] 启动 dbus-daemon..."
-$DBUS_EXEC --system &
+setsid "$DBUS_EXEC" --system </dev/null >/dev/null 2>&1 &
 
 # 等待 dbus 启动
 sleep 1
 
-# 启动 smbd0
+# 启动 smbd0 (-D 自身 daemon 化)
 echo "[STEP] 启动 smbd0..."
 export TMPDIR="$SMB_DIR/lib"
-$SMB_EXEC -D -s "$SMB_CONFIG"
+"$SMB_EXEC" -D -s "$SMB_CONFIG" </dev/null >/dev/null 2>&1
 
 sleep 2
 

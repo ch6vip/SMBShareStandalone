@@ -145,10 +145,29 @@ class MainActivity : AppCompatActivity() {
 
             appendLog("正在启动 SMB 服务…")
 
-            // 延迟检查状态
+            // 延迟检查状态 + 输出诊断
             lifecycleScope.launch {
                 kotlinx.coroutines.delay(4000)
                 refreshStatus()
+
+                val running = withContext(Dispatchers.IO) { processManager.isRunning() }
+                if (running) {
+                    val ip = withContext(Dispatchers.IO) {
+                        NetworkUtils.getWifiIpAddress()
+                            ?: NetworkUtils.getWifiIpFromManager(this@MainActivity)
+                    }
+                    appendLog("✅ SMB 服务运行中")
+                    if (ip != null) {
+                        appendLog("局域网地址: \\\\$ip\\$shareName")
+                        appendLog("smb://$ip/$shareName")
+                    } else {
+                        appendLog("⚠️ 未获取到局域网 IP，请确认已连 WiFi")
+                    }
+                } else {
+                    appendLog("❌ smbd0 未运行，诊断信息:")
+                    val diag = withContext(Dispatchers.IO) { processManager.getStatusDiagnosis() }
+                    diag.lines().filter { it.isNotBlank() }.forEach { appendLog("  $it") }
+                }
             }
         }
     }

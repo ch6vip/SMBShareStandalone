@@ -62,21 +62,21 @@ class SmbProcessManager {
                     return@withContext StartResult(false, "写入配置文件失败")
                 }
 
-                // 6. 启动 dbus-daemon
-                val dbusResult = shellExecutor.execute(
-                    "${SmbConfigGenerator.DBUS_EXECUTABLE} --system &",
-                    asRoot = true
-                )
-                // 等待 dbus 启动
-                shellExecutor.execute("sleep 1", asRoot = true)
-
-                // 7. 启动 smbd0
-                val smbStartScript = buildString {
+                // 6+7. 在单个 root 会话里启动 dbus-daemon + smbd0
+                //  - 关键: 必须在同一个 su 会话里完成, 否则后台进程会随 su 退出被回收
+                //  - setsid + </dev/null + >/dev/null 2>&1 让 dbus 脱离当前会话存活,
+                //    同时不继承 stdout 管道 (否则 ShellExecutor 的读取循环会一直阻塞)
+                //  - smbd0 -D 自身 daemon 化 (对应原 app 的 `smbd0 $@` wrapper)
+                val startScript = buildString {
                     append("export TMPDIR=${SmbConfigGenerator.SMB_LIB_DIR}\n")
-                    append("${SmbConfigGenerator.SMB_EXECUTABLE} -D -s ${SmbConfigGenerator.DEFAULT_CONFIG_PATH}")
+                    // dbus 必须先于 smbd0 起来; setsid 让它脱离 su 会话
+                    append("setsid ${SmbConfigGenerator.DBUS_EXECUTABLE} --system </dev/null >/dev/null 2>&1 &\n")
+                    append("sleep 1\n")
+                    // smbd0 -D 前台 fork 成 daemon, 同样切断 fd 继承避免阻塞
+                    append("${SmbConfigGenerator.SMB_EXECUTABLE} -D -s ${SmbConfigGenerator.DEFAULT_CONFIG_PATH} </dev/null >/dev/null 2>&1\n")
                 }
 
-                val smbResult = shellExecutor.execute(smbStartScript, asRoot = true)
+                val smbResult = shellExecutor.execute(startScript, asRoot = true)
 
                 // 8. 等待并验证是否成功启动
                 shellExecutor.execute("sleep 2", asRoot = true)
@@ -126,9 +126,9 @@ class SmbProcessManager {
     }
 
     /**
-     * 获取诊断信息 (用于调试启动失败)
+     * 获取诊断信息 (用于调试启动失败 / UI 显示)
      */
-    private suspend fun getStatusDiagnosis(): String {
+    suspend fun getStatusDiagnosis(): String {
         val sb = StringBuilder()
 
         // 检查文件是否存在
