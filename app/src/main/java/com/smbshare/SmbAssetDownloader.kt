@@ -89,7 +89,7 @@ class SmbAssetDownloader(private val context: Context) {
     /**
      * 将 assets 中的文件复制到设备路径 (需要 root 写入 /data)
      */
-    private fun copyAssetToFile(assetName: String, destPath: String): Boolean {
+    private suspend fun copyAssetToFile(assetName: String, destPath: String): Boolean {
         return try {
             val inputStream = context.assets.open(assetName)
             // 先写到 app 私有目录，再 mv 到目标 (避免跨用户权限问题)
