@@ -66,9 +66,11 @@ class SmbAssetDownloader(private val context: Context) {
                 }
 
                 // 设置执行权限
+                //  - smbd0 主程序
+                //  - ld-linux-aarch64.so.1 是动态链接器, 由内核作为 interpreter 加载, 需 exec 位
                 onProgress?.invoke("设置权限…", 0.85f)
                 makeExecutable(SmbConfigGenerator.SMB_EXECUTABLE)
-                makeExecutable(SmbConfigGenerator.DBUS_EXECUTABLE)
+                makeExecutable("${SmbConfigGenerator.SMB_INSTALL_DIR}/ld-linux-aarch64.so.1")
 
                 // 清理临时文件
                 shellExecutor.execute("rm -f $tmpPath", asRoot = true)
@@ -169,6 +171,5 @@ class SmbAssetDownloader(private val context: Context) {
     private suspend fun stopExistingServices() {
         val busyboxPath = findBusybox()
         shellExecutor.execute("$busyboxPath killall -9 smbd0 2>/dev/null", asRoot = true)
-        shellExecutor.execute("$busyboxPath killall -9 dbus-daemon 2>/dev/null", asRoot = true)
     }
 }

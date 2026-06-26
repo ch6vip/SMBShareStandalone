@@ -25,10 +25,6 @@ fi
 echo "[STEP] 停止 smbd0..."
 $BUSYBOX killall -9 smbd0 2>/dev/null
 
-# 停止 dbus-daemon
-echo "[STEP] 停止 dbus-daemon..."
-$BUSYBOX killall -9 dbus-daemon 2>/dev/null
-
 # 清理配置文件
 echo "[STEP] 清理配置文件..."
 rm -f "$SMB_DIR/samba/smb.conf" 2>/dev/null

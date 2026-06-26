@@ -128,6 +128,5 @@ class SmbConfigGenerator {
         const val SMB_LIB_DIR = "/data/zb/lib"
         const val SMB_CONFIG_DIR = "/data/zb/samba"
         const val SMB_EXECUTABLE = "/data/zb/smbd0"
-        const val DBUS_EXECUTABLE = "/data/zb/dbus-daemon"
     }
 }

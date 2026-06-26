@@ -9,7 +9,6 @@ SMB_DIR="/data/zb"
 SMB_CONFIG_DIR="$SMB_DIR/samba"
 SMB_CONFIG="$SMB_CONFIG_DIR/smb.conf"
 SMB_EXEC="$SMB_DIR/smbd0"
-DBUS_EXEC="$SMB_DIR/dbus-daemon"
 SHARE_NAME="rannki_smb"
 SHARE_PATH="/sdcard"
 WORKGROUP="WORKGROUP"
@@ -45,19 +44,13 @@ if [ ! -f "$SMB_EXEC" ]; then
     echo "[INFO] 请先解压 smb3.tgz 到 $SMB_DIR"
     exit 1
 fi
-if [ ! -f "$DBUS_EXEC" ]; then
-    echo "[ERROR] dbus-daemon 未找到: $DBUS_EXEC"
-    exit 1
-fi
 
 echo "[INFO] smbd0: OK"
-echo "[INFO] dbus-daemon: OK"
 
 # 停止已有实例
 echo ""
 echo "[STEP] 停止已有实例..."
 $BUSYBOX killall -9 smbd0 2>/dev/null
-$BUSYBOX killall -9 dbus-daemon 2>/dev/null
 sleep 1
 
 # 创建目录
@@ -109,15 +102,8 @@ SMBCONFEOF
 
 echo "[INFO] 配置文件: $SMB_CONFIG"
 
-# 启动 dbus-daemon
-# setsid 让 dbus 脱离当前会话, 脚本退出时不会被 SIGHUP 连带杀掉
-echo "[STEP] 启动 dbus-daemon..."
-setsid "$DBUS_EXEC" --system </dev/null >/dev/null 2>&1 &
-
-# 等待 dbus 启动
-sleep 1
-
 # 启动 smbd0 (-D 自身 daemon 化)
+# smbd0 不依赖 dbus (SambaDroid 二进制自带库, RPATH 已烧死为 /data/zb:/data/zb/samba)
 echo "[STEP] 启动 smbd0..."
 export TMPDIR="$SMB_DIR/lib"
 "$SMB_EXEC" -D -s "$SMB_CONFIG" </dev/null >/dev/null 2>&1
@@ -151,7 +137,6 @@ else
     echo "诊断信息:"
     echo "---"
     ls -la "$SMB_EXEC"
-    ls -la "$DBUS_EXEC"
     cat "$SMB_CONFIG"
     echo "---"
 fi

@@ -5,10 +5,11 @@ import kotlinx.coroutines.withContext
 
 /**
  * SMB 进程管理器
- * 管理 smbd0 + dbus-daemon 的生命周期
+ * 管理 smbd0 的生命周期
  *
- * smbd0 是 Samba 4.x 的完整 SMB 服务端守护进程，
- * 启动它需要先启动 dbus-daemon (system bus)。
+ * smbd0 是 SambaDroid 编译的 Samba 4.x SMB 服务端守护进程。
+ * 它不依赖 dbus-daemon (二进制自带所需库)，RPATH 已烧死为
+ * /data/zb:/data/zb/samba，解压到 /data/zb 即可直接运行。
  */
 class SmbProcessManager {
 
@@ -16,9 +17,8 @@ class SmbProcessManager {
 
     /**
      * 启动 SMB 服务
-     * 1. 先启动 dbus-daemon (Samba 依赖的 D-Bus 消息总线)
-     * 2. 生成 smb.conf
-     * 3. 启动 smbd0
+     * 1. 生成 smb.conf
+     * 2. 启动 smbd0 (-D daemon 模式)
      *
      * @param shareName 共享名称
      * @param sharePath 共享路径
@@ -62,17 +62,13 @@ class SmbProcessManager {
                     return@withContext StartResult(false, "写入配置文件失败")
                 }
 
-                // 6+7. 在单个 root 会话里启动 dbus-daemon + smbd0
-                //  - 关键: 必须在同一个 su 会话里完成, 否则后台进程会随 su 退出被回收
-                //  - setsid + </dev/null + >/dev/null 2>&1 让 dbus 脱离当前会话存活,
-                //    同时不继承 stdout 管道 (否则 ShellExecutor 的读取循环会一直阻塞)
-                //  - smbd0 -D 自身 daemon 化 (对应原 app 的 `smbd0 $@` wrapper)
+                // 6. 启动 smbd0 (对应原 app libourom.so 中的命令: `export TMPDIR=/data/zb/lib; smbd0 $@`)
+                //  - smbd0 不依赖 dbus-daemon (SambaDroid 二进制自带所需库, tgz 里也没有 dbus)
+                //  - smbd0 的 RPATH 已烧死为 /data/zb:/data/zb/samba, 动态库无需 LD_LIBRARY_PATH
+                //  - smbd0 -D 自身 fork 成 daemon; </dev/null >/dev/null 2>&1 切断 fd 继承,
+                //    否则 ShellExecutor 的 readLine() 循环会一直等管道 EOF 而阻塞
                 val startScript = buildString {
                     append("export TMPDIR=${SmbConfigGenerator.SMB_LIB_DIR}\n")
-                    // dbus 必须先于 smbd0 起来; setsid 让它脱离 su 会话
-                    append("setsid ${SmbConfigGenerator.DBUS_EXECUTABLE} --system </dev/null >/dev/null 2>&1 &\n")
-                    append("sleep 1\n")
-                    // smbd0 -D 前台 fork 成 daemon, 同样切断 fd 继承避免阻塞
                     append("${SmbConfigGenerator.SMB_EXECUTABLE} -D -s ${SmbConfigGenerator.DEFAULT_CONFIG_PATH} </dev/null >/dev/null 2>&1\n")
                 }
 
@@ -98,7 +94,7 @@ class SmbProcessManager {
 
     /**
      * 停止 SMB 服务
-     * 停止 smbd0 和 dbus-daemon，清理 smb.conf
+     * 停止 smbd0，清理 smb.conf
      */
     suspend fun stop(): Boolean {
         return withContext(Dispatchers.IO) {
@@ -134,7 +130,6 @@ class SmbProcessManager {
         // 检查文件是否存在
         val checkFiles = listOf(
             SmbConfigGenerator.SMB_EXECUTABLE,
-            SmbConfigGenerator.DBUS_EXECUTABLE,
             SmbConfigGenerator.DEFAULT_CONFIG_PATH
         )
         for (file in checkFiles) {
@@ -142,9 +137,14 @@ class SmbProcessManager {
             sb.appendLine("$file: ${result.stdout?.trim() ?: "?"}")
         }
 
-        // 检查 dbus 状态
-        val dbusRunning = shellExecutor.isProcessRunning("dbus-daemon")
-        sb.appendLine("dbus-daemon: ${if (dbusRunning) "running" else "stopped"}")
+        // smbd0 启动失败时把它的实际报错打出来 (前台跑一次, 不加 -D)
+        val smbErr = shellExecutor.execute(
+            "${SmbConfigGenerator.SMB_EXECUTABLE} -i -s ${SmbConfigGenerator.DEFAULT_CONFIG_PATH} 2>&1 | head -5",
+            asRoot = true
+        )
+        if (!smbErr.output.isNullOrBlank()) {
+            sb.appendLine("smbd0 输出: ${smbErr.output.trim()}")
+        }
 
         // 检查端口
         val ports = listOf(139, 445)
@@ -160,19 +160,18 @@ class SmbProcessManager {
     }
 
     /**
-     * 停止已有的 smbd0 和 dbus-daemon 实例
+     * 停止已有的 smbd0 实例
      */
     private suspend fun stopExistingInstances() {
         val busybox = findBusybox()
         shellExecutor.execute("$busybox killall -9 smbd0 2>/dev/null", asRoot = true)
-        shellExecutor.execute("$busybox killall -9 dbus-daemon 2>/dev/null", asRoot = true)
         // 等待进程退出
         shellExecutor.execute("sleep 1", asRoot = true)
     }
 
     private suspend fun checkBinaryExists(): Boolean {
         val result = shellExecutor.execute(
-            "test -f ${SmbConfigGenerator.SMB_EXECUTABLE} && test -f ${SmbConfigGenerator.DBUS_EXECUTABLE} && echo all_ok",
+            "test -f ${SmbConfigGenerator.SMB_EXECUTABLE} && echo all_ok",
             asRoot = true
         )
         return result.stdout?.contains("all_ok") == true
