@@ -8,6 +8,7 @@ import java.io.InputStreamReader
 /**
  * Root shell 执行器
  * 封装 su 命令调用，支持执行多条命令和脚本
+ * 当 su 不可用时 (KernelSU 未授权等) 自动降级为普通 shell
  */
 class ShellExecutor {
 
@@ -61,7 +62,24 @@ class ShellExecutor {
     }
 
     private fun executeInternal(command: String, asRoot: Boolean): ExecutionResult {
+        // 尝试 su，失败则降级为 sh
         val shell = if (asRoot) "su" else "sh"
+        try {
+            return runWithShell(shell, command)
+        } catch (e: java.io.IOException) {
+            // su 不可用 (KernelSU 未授权 / error=13)，降级为 sh
+            if (asRoot) {
+                try {
+                    return runWithShell("sh", command)
+                } catch (e2: Exception) {
+                    return ExecutionResult(-1, null, e2.message)
+                }
+            }
+            return ExecutionResult(-1, null, e.message)
+        }
+    }
+
+    private fun runWithShell(shell: String, command: String): ExecutionResult {
         val process = Runtime.getRuntime().exec(arrayOf(shell, "-c", command))
 
         val stdoutReader = BufferedReader(InputStreamReader(process.inputStream))

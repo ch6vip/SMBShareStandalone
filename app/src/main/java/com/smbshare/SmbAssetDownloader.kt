@@ -12,11 +12,113 @@ import java.net.URL
 
 /**
  * SMB 资源下载器
- * 从服务器下载 smb3.tgz 等 SMB 二进制包
+ * 优先从 APK assets 释放 smb3.tgz，失败时回退到网络下载
  */
 class SmbAssetDownloader(private val context: Context) {
 
     private val shellExecutor = ShellExecutor()
+
+    // ===================================================================
+    //  Assets 安装 (主路径)
+    // ===================================================================
+
+    /**
+     * 从 APK assets 安装 SMB 依赖
+     * 将内置的 smb3.tgz 释放到 /data/local/tmp 然后解压到 /data/zb/
+     */
+    suspend fun installFromAssets(
+        onProgress: ((String, Float) -> Unit)? = null
+    ): Boolean {
+        return withContext(Dispatchers.IO) {
+            try {
+                onProgress?.invoke("创建目录…", 0f)
+
+                // 创建工作目录
+                val dirs = listOf(
+                    SmbConfigGenerator.SMB_INSTALL_DIR,
+                    SmbConfigGenerator.SMB_LIB_DIR,
+                    SmbConfigGenerator.SMB_CONFIG_DIR
+                )
+                for (dir in dirs) {
+                    shellExecutor.execute("mkdir -p $dir", asRoot = true)
+                }
+
+                // 从 assets 复制 smb3.tgz 到 /data/local/tmp
+                onProgress?.invoke("释放 smb3.tgz…", 0.1f)
+                val tmpPath = "/data/local/tmp/smb3.tgz"
+                val copied = copyAssetToFile("smb3.tgz", tmpPath)
+                if (!copied) {
+                    onProgress?.invoke("assets 中未找到 smb3.tgz", 0f)
+                    return@withContext false
+                }
+
+                // 停止旧的服务进程
+                onProgress?.invoke("停止旧服务…", 0.6f)
+                stopExistingServices()
+
+                // 解压到 /data/ (tgz 内包含 zb/ 前缀)
+                onProgress?.invoke("解压中…", 0.7f)
+                val busyboxPath = findBusybox()
+                val extractResult = shellExecutor.execute(
+                    "$busyboxPath tar -xzf \"$tmpPath\" -C /data/",
+                    asRoot = true
+                )
+                if (!extractResult.isSuccess) {
+                    onProgress?.invoke("解压失败", 0f)
+                    shellExecutor.execute("rm -f $tmpPath", asRoot = true)
+                    return@withContext false
+                }
+
+                // 设置执行权限
+                onProgress?.invoke("设置权限…", 0.85f)
+                makeExecutable(SmbConfigGenerator.SMB_EXECUTABLE)
+                makeExecutable(SmbConfigGenerator.DBUS_EXECUTABLE)
+
+                // 清理临时文件
+                shellExecutor.execute("rm -f $tmpPath", asRoot = true)
+
+                onProgress?.invoke("安装完成", 1f)
+                true
+            } catch (e: Exception) {
+                onProgress?.invoke("安装出错: ${e.message}", 0f)
+                false
+            }
+        }
+    }
+
+    /**
+     * 将 assets 中的文件复制到设备路径 (需要 root 写入 /data)
+     */
+    private fun copyAssetToFile(assetName: String, destPath: String): Boolean {
+        return try {
+            val inputStream = context.assets.open(assetName)
+            // 先写到 app 私有目录，再 mv 到目标 (避免跨用户权限问题)
+            val tmpFile = File(context.cacheDir, assetName)
+            val outputStream = FileOutputStream(tmpFile)
+            val buffer = ByteArray(8192)
+            var bytesRead: Int
+            while (inputStream.read(buffer).also { bytesRead = it } != -1) {
+                outputStream.write(buffer, 0, bytesRead)
+            }
+            outputStream.flush()
+            outputStream.close()
+            inputStream.close()
+
+            // 用 root mv 到目标路径
+            val result = shellExecutor.execute(
+                "cat ${tmpFile.absolutePath} > $destPath && chmod 644 $destPath",
+                asRoot = true
+            )
+            tmpFile.delete()
+            result.isSuccess
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    // ===================================================================
+    //  网络下载 (回退路径)
+    // ===================================================================
 
     /**
      * 下载文件并校验 MD5
@@ -38,6 +140,8 @@ class SmbAssetDownloader(private val context: Context) {
                 val connection = url.openConnection() as HttpURLConnection
                 connection.connectTimeout = 30000
                 connection.readTimeout = 60000
+                connection.setRequestProperty("Referer", "https://www.123pan.com/")
+                connection.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 13)")
 
                 // 如果有 expectedMd5 但文件已存在且校验正确，跳过下载
                 if (expectedMd5 != null && destFile.exists()) {
@@ -150,6 +254,7 @@ class SmbAssetDownloader(private val context: Context) {
     private suspend fun findBusybox(): String {
         val candidates = listOf(
             "/nitiFile/busybox",
+            "/data/zb/busybox",
             "/data/assetsFairu/busybox",
             "/system/xbin/busybox",
             "/system/bin/busybox",
@@ -176,10 +281,29 @@ class SmbAssetDownloader(private val context: Context) {
     }
 
     /**
-     * 一键安装 SMB 依赖 (从默认 URL 下载)
+     * 一键安装 SMB 依赖
+     * 优先从 assets 安装，失败时回退到网络下载
      */
     suspend fun installSmbDependencies(
         smbTgzUrl: String = DEFAULT_SMB_TGZ_URL,
+        onProgress: ((String, Float) -> Unit)? = null
+    ): Boolean {
+        // 路径 1: 从 assets 安装
+        val assetsOk = installFromAssets(onProgress)
+        if (assetsOk) {
+            return true
+        }
+
+        // 路径 2: 回退到网络下载
+        onProgress?.invoke("assets 安装失败，尝试网络下载…", 0f)
+        return installFromNetwork(smbTgzUrl, onProgress)
+    }
+
+    /**
+     * 从网络下载并安装 (原逻辑)
+     */
+    private suspend fun installFromNetwork(
+        smbTgzUrl: String,
         onProgress: ((String, Float) -> Unit)? = null
     ): Boolean {
         return withContext(Dispatchers.IO) {

@@ -192,6 +192,7 @@ class SmbProcessManager {
     private suspend fun findBusybox(): String {
         val candidates = listOf(
             "/nitiFile/busybox",
+            "/data/zb/busybox",
             "/data/assetsFairu/busybox",
             "/system/xbin/busybox",
             "/system/bin/busybox"
