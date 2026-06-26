@@ -55,8 +55,19 @@ class SmbService : Service() {
             ACTION_STOP -> {
                 stopSmb()
             }
+            else -> {
+                // intent == null: 进程被杀后系统用 START_REDELIVER_INTENT 重新拉起,
+                // 但 redeliver 失败或异常路径下 intent 仍可能为 null。
+                // startForegroundService 后必须在 5s 内 startForeground, 否则
+                // 抛 RemoteServiceException / ANR, 所以这里先把通知顶上再自我了结。
+                startForegroundNotification()
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                stopSelf()
+            }
         }
-        return START_STICKY
+        // 用 REDELIVER_INTENT: 被杀后系统会带着原始 intent(含 share 配置) 重新投递,
+        // 而非 START_STICKY 的 null intent。
+        return START_REDELIVER_INTENT
     }
 
     private fun startSmb(shareName: String, sharePath: String, workgroup: String) {

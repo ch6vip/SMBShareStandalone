@@ -35,10 +35,6 @@ class SmbConfigGenerator {
         sb.appendLine("unix charset = UTF-8")
         sb.appendLine("server min protocol = $protocolMin")
         sb.appendLine("timestamp logs = no")
-
-        if (guestAccess) {
-            // Skip log noise
-        }
         sb.appendLine("log level = 0")
         sb.appendLine("protocol = $protocol")
         sb.appendLine("interfaces = $interfaces")

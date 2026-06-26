@@ -137,13 +137,15 @@ class SmbProcessManager {
             sb.appendLine("$file: ${result.stdout?.trim() ?: "?"}")
         }
 
-        // smbd0 启动失败时把它的实际报错打出来 (前台跑一次, 不加 -D)
-        val smbErr = shellExecutor.execute(
-            "${SmbConfigGenerator.SMB_EXECUTABLE} -i -s ${SmbConfigGenerator.DEFAULT_CONFIG_PATH} 2>&1 | head -5",
+        // 用 testparm 校验配置语法 (只解析配置, 不 bind 端口, 不会与已有 smbd0 冲突)
+        // 比起 `smbd0 -i` 前台跑更安全: -i 会尝试监听 445, 可能和现有实例抢端口或留下残余进程
+        val testparm = "${SmbConfigGenerator.SMB_INSTALL_DIR}/testparm"
+        val parmErr = shellExecutor.execute(
+            "test -f $testparm && $testparm -s ${SmbConfigGenerator.DEFAULT_CONFIG_PATH} 2>&1 | head -8",
             asRoot = true
         )
-        if (!smbErr.output.isNullOrBlank()) {
-            sb.appendLine("smbd0 输出: ${smbErr.output.trim()}")
+        if (!parmErr.output.isNullOrBlank()) {
+            sb.appendLine("testparm: ${parmErr.output.trim()}")
         }
 
         // 检查端口
@@ -184,7 +186,7 @@ class SmbProcessManager {
             SmbConfigGenerator.SMB_CONFIG_DIR
         )
         for (dir in dirs) {
-            shellExecutor.execute("mkdir -p $dir", asRoot = true)
+            shellExecutor.execute("mkdir -p \"$dir\"", asRoot = true)
         }
     }
 

@@ -3,16 +3,10 @@ package com.smbshare.ui
 import android.Manifest
 import android.content.ClipData
 import android.content.ClipboardManager
-import android.content.ComponentName
 import android.content.Intent
-import android.content.ServiceConnection
 import android.content.pm.PackageManager
-import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import android.os.IBinder
-import android.provider.Settings
-import android.util.Log
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
@@ -40,6 +34,11 @@ class MainActivity : AppCompatActivity() {
     private val processManager = SmbProcessManager()
     private val shellExecutor = ShellExecutor()
     private lateinit var downloader: SmbAssetDownloader
+
+    // Android 13+ 通知权限申请器; 不授予则前台服务通知不显示
+    private val notificationPermLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { /* 用户拒绝也不阻断主流程, 仅通知栏不显示 */ }
 
     private lateinit var tvStatus: TextView
     private lateinit var tvStatusLabel: TextView
@@ -83,7 +82,19 @@ class MainActivity : AppCompatActivity() {
         downloader = SmbAssetDownloader(this)
 
         setupClickListeners()
+        requestNotificationPermissionIfNeeded()
         checkRootAndUpdateStatus()
+    }
+
+    private fun requestNotificationPermissionIfNeeded() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            val granted = ContextCompat.checkSelfPermission(
+                this, Manifest.permission.POST_NOTIFICATIONS
+            ) == PackageManager.PERMISSION_GRANTED
+            if (!granted) {
+                notificationPermLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }
     }
 
     private fun setupClickListeners() {
@@ -102,11 +113,13 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun startSmbService() {
-        // 检查网络
-        if (!NetworkUtils.isWifiConnected(this)) {
+        // 只要能拿到局域网 IP 即可启动 (WiFi / 以太网 / USB 网络共享都算),
+        // 不强制 WiFi: smbd 本身不关心链路类型。
+        val lanIp = NetworkUtils.getWifiIpAddress() ?: NetworkUtils.getWifiIpFromManager(this)
+        if (lanIp == null) {
             MaterialAlertDialogBuilder(this)
                 .setTitle("网络错误")
-                .setMessage("请先连接 WiFi 网络")
+                .setMessage("未检测到局域网地址，请先连接 WiFi 或以太网")
                 .setPositiveButton("确定", null)
                 .show()
             return
@@ -126,9 +139,14 @@ class MainActivity : AppCompatActivity() {
             }
 
             // 启动 foreground service
-            val shareName = etShareName?.text?.toString() ?: SmbConfigGenerator.DEFAULT_SHARE_NAME
-            val sharePath = etSharePath?.text?.toString() ?: SmbConfigGenerator.DEFAULT_SHARE_PATH
-            val workgroup = etWorkgroup?.text?.toString() ?: SmbConfigGenerator.DEFAULT_WORKGROUP
+            // takeIf { isNotBlank() }: ?: 只挡 null, 挡不住空串/纯空格,
+            // 否则用户清空输入框会生成非法的 [] share 名导致 smbd 异常
+            val shareName = etShareName?.text?.toString()?.trim()?.takeIf { it.isNotBlank() }
+                ?: SmbConfigGenerator.DEFAULT_SHARE_NAME
+            val sharePath = etSharePath?.text?.toString()?.trim()?.takeIf { it.isNotBlank() }
+                ?: SmbConfigGenerator.DEFAULT_SHARE_PATH
+            val workgroup = etWorkgroup?.text?.toString()?.trim()?.takeIf { it.isNotBlank() }
+                ?: SmbConfigGenerator.DEFAULT_WORKGROUP
 
             val intent = Intent(this@MainActivity, SmbService::class.java).apply {
                 action = SmbService.ACTION_START
@@ -252,7 +270,8 @@ class MainActivity : AppCompatActivity() {
                         tvDeviceIp.visibility = android.view.View.VISIBLE
 
                         val shareName =
-                            etShareName?.text?.toString() ?: SmbConfigGenerator.DEFAULT_SHARE_NAME
+                            etShareName?.text?.toString()?.trim()?.takeIf { it.isNotBlank() }
+                                ?: SmbConfigGenerator.DEFAULT_SHARE_NAME
                         tvConnectInfo.text = getString(R.string.connect_info, ip, shareName)
                         tvConnectInfo.visibility = android.view.View.VISIBLE
                     }

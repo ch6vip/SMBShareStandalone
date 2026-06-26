@@ -10,14 +10,10 @@ class SmbShareApp : Application() {
     companion object {
         const val NOTIFICATION_CHANNEL_ID = "smb_service_channel"
         const val NOTIFICATION_ID = 1001
-
-        lateinit var instance: SmbShareApp
-            private set
     }
 
     override fun onCreate() {
         super.onCreate()
-        instance = this
         createNotificationChannel()
     }
 

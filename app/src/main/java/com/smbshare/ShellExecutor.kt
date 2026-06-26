@@ -2,8 +2,6 @@ package com.smbshare
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.io.BufferedReader
-import java.io.InputStreamReader
 
 /**
  * Root shell 执行器
@@ -45,12 +43,13 @@ class ShellExecutor {
 
     /**
      * 检查 root 权限是否可用
+     * 必须真正拿到 uid=0 才算 root。
+     * 不能用 exitCode==0 判断: su 不可用时会降级到 sh, sh 跑 `id` 同样返回 0,
+     * 那样无 root 设备也会被误判为有 root。
      */
     suspend fun checkRoot(): Boolean {
         val result = execute("id", asRoot = true)
-        return result.stdout?.contains("uid=0") == true ||
-                result.stdout?.contains("uid=0(root)") == true ||
-                result.exitCode == 0
+        return result.stdout?.contains("uid=0") == true
     }
 
     /**
@@ -82,23 +81,28 @@ class ShellExecutor {
     private fun runWithShell(shell: String, command: String): ExecutionResult {
         val process = Runtime.getRuntime().exec(arrayOf(shell, "-c", command))
 
-        val stdoutReader = BufferedReader(InputStreamReader(process.inputStream))
-        val stderrReader = BufferedReader(InputStreamReader(process.errorStream))
-
+        // 必须并发读 stdout / stderr: 若顺序读, 命令往一个管道写满而我们正堵在另一个管道,
+        // 进程写阻塞 -> 双向死锁。用独立线程各读一个流。
         val stdout = StringBuilder()
         val stderr = StringBuilder()
 
-        var line: String?
-        while (stdoutReader.readLine().also { line = it } != null) {
-            stdout.appendLine(line)
+        val stdoutThread = Thread {
+            process.inputStream.bufferedReader().useLines { lines ->
+                lines.forEach { synchronized(stdout) { stdout.appendLine(it) } }
+            }
         }
-        while (stderrReader.readLine().also { line = it } != null) {
-            stderr.appendLine(line)
+        val stderrThread = Thread {
+            process.errorStream.bufferedReader().useLines { lines ->
+                lines.forEach { synchronized(stderr) { stderr.appendLine(it) } }
+            }
         }
+        stdoutThread.start()
+        stderrThread.start()
 
         val exitCode = process.waitFor()
-        stdoutReader.close()
-        stderrReader.close()
+        // 等读取线程把残余输出排空
+        stdoutThread.join()
+        stderrThread.join()
         process.destroy()
 
         return ExecutionResult(

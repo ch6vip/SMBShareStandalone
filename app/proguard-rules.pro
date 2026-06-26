@@ -5,9 +5,6 @@
 -keep class com.smbshare.SmbService { *; }
 -keep class com.smbshare.ui.MainActivity { *; }
 
-# ViewBinding generated classes
--keep class com.smbshare.databinding.** { *; }
-
 # Kotlin metadata / coroutines
 -keepattributes *Annotation*, InnerClasses, Signature, Exceptions
 -dontwarn kotlinx.coroutines.**

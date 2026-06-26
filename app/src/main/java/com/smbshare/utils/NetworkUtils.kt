@@ -27,32 +27,34 @@ object NetworkUtils {
      */
     fun getWifiIpAddress(): String? {
         try {
+            // 收集所有 (接口名, 私有局域网 IPv4) 候选
+            // 必须是私有网段, 排除蜂窝(rmnet)/VPN(tun) 等可路由公网地址
+            val candidates = mutableListOf<Pair<String, String>>()
             val interfaces = NetworkInterface.getNetworkInterfaces()
             while (interfaces.hasMoreElements()) {
                 val networkInterface = interfaces.nextElement()
-                // 跳过 loopback 和 down 的接口
+                // 跳过 loopback / down / 虚拟点对点(VPN) 接口
                 if (networkInterface.isLoopback || !networkInterface.isUp) continue
+                val ifName = networkInterface.name ?: ""
+                if (ifName.startsWith("tun") || ifName.startsWith("ppp") ||
+                    ifName.startsWith("rmnet") || ifName.startsWith("ccmni")
+                ) continue
 
                 val addresses = networkInterface.inetAddresses
                 while (addresses.hasMoreElements()) {
                     val address = addresses.nextElement()
-                    // 只返回 IPv4 非 loopback 地址
-                    if (!address.isLoopbackAddress && address is Inet4Address) {
-                        val hostAddress = address.hostAddress
-                        // 常见 WiFi 接口名
-                        if (networkInterface.name.startsWith("wlan") ||
-                            networkInterface.name.startsWith("eth") ||
-                            networkInterface.displayName.contains("wlan", ignoreCase = true)
-                        ) {
-                            return hostAddress
-                        }
-                        // 返回第一个非 link-local 的 IP
-                        if (!hostAddress.startsWith("169.254")) {
-                            return hostAddress
-                        }
+                    if (address.isLoopbackAddress || address !is Inet4Address) continue
+                    val host = address.hostAddress ?: continue
+                    // 只接受 RFC1918 私有网段, 同时排除 link-local(169.254)
+                    if (address.isSiteLocalAddress && !host.startsWith("169.254")) {
+                        candidates.add(ifName to host)
                     }
                 }
             }
+            // 优先 wlan/eth 接口, 其次任意私有网段
+            return candidates.firstOrNull {
+                it.first.startsWith("wlan") || it.first.startsWith("eth") || it.first.startsWith("ap")
+            }?.second ?: candidates.firstOrNull()?.second
         } catch (_: Exception) {
         }
         return null
