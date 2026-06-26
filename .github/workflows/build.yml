@@ -69,6 +69,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
+            artifacts/app-debug/*.apk
             artifacts/app-release/*.apk
             artifacts/shell-scripts/*.sh
             artifacts/shell-scripts/*.template
