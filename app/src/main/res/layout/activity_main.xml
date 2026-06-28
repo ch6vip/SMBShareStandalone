@@ -156,6 +156,15 @@
                             android:singleLine="true" />
                     </com.google.android.material.textfield.TextInputLayout>
 
+                    <com.google.android.material.materialswitch.MaterialSwitch
+                        android:id="@+id/switch_read_only"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp"
+                        android:text="@string/smb_read_only"
+                        android:textSize="14sp"
+                        android:checked="false" />
+
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 

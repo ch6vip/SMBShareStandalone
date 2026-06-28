@@ -27,7 +27,8 @@ class SmbProcessManager {
     suspend fun start(
         shareName: String = SmbConfigGenerator.DEFAULT_SHARE_NAME,
         sharePath: String = SmbConfigGenerator.DEFAULT_SHARE_PATH,
-        workgroup: String = SmbConfigGenerator.DEFAULT_WORKGROUP
+        workgroup: String = SmbConfigGenerator.DEFAULT_WORKGROUP,
+        readOnly: Boolean = false
     ): StartResult {
         return withContext(Dispatchers.IO) {
             try {
@@ -56,6 +57,7 @@ class SmbProcessManager {
                     shareName = shareName,
                     sharePath = sharePath,
                     workgroup = workgroup,
+                    readOnly = readOnly,
                     shellExecutor = shellExecutor
                 )
                 if (!configWritten) {

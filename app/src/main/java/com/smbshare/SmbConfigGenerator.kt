@@ -87,13 +87,15 @@ class SmbConfigGenerator {
         shareName: String = DEFAULT_SHARE_NAME,
         sharePath: String = DEFAULT_SHARE_PATH,
         workgroup: String = DEFAULT_WORKGROUP,
+        readOnly: Boolean = false,
         shellExecutor: ShellExecutor = ShellExecutor()
     ): Boolean {
         return withContext(Dispatchers.IO) {
             val config = generateContent(
                 shareName = shareName,
                 sharePath = sharePath,
-                workgroup = workgroup
+                workgroup = workgroup,
+                readOnly = readOnly
             )
 
             // 创建目录

@@ -68,6 +68,8 @@ class MainActivity : AppCompatActivity() {
         get() = findViewById(R.id.layout_progress)
     private val btnCopyLog: com.google.android.material.button.MaterialButton?
         get() = findViewById(R.id.btn_copy_log)
+    private val switchReadOnly: com.google.android.material.materialswitch.MaterialSwitch?
+        get() = findViewById(R.id.switch_read_only)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -147,13 +149,16 @@ class MainActivity : AppCompatActivity() {
                 ?: SmbConfigGenerator.DEFAULT_SHARE_PATH
             val workgroup = etWorkgroup?.text?.toString()?.trim()?.takeIf { it.isNotBlank() }
                 ?: SmbConfigGenerator.DEFAULT_WORKGROUP
+            val readOnly = switchReadOnly?.isChecked == true
 
             val intent = Intent(this@MainActivity, SmbService::class.java).apply {
                 action = SmbService.ACTION_START
                 putExtra(SmbService.EXTRA_SHARE_NAME, shareName)
                 putExtra(SmbService.EXTRA_SHARE_PATH, sharePath)
                 putExtra(SmbService.EXTRA_WORKGROUP, workgroup)
+                putExtra(SmbService.EXTRA_READ_ONLY, readOnly)
             }
+            if (readOnly) appendLog("只读模式: 客户端不可写入")
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 startForegroundService(intent)

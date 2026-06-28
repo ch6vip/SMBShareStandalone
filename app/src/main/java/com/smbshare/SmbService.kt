@@ -23,6 +23,7 @@ class SmbService : Service() {
         const val EXTRA_SHARE_NAME = "share_name"
         const val EXTRA_SHARE_PATH = "share_path"
         const val EXTRA_WORKGROUP = "workgroup"
+        const val EXTRA_READ_ONLY = "read_only"
     }
 
     private val binder = LocalBinder()
@@ -50,7 +51,8 @@ class SmbService : Service() {
                     ?: SmbConfigGenerator.DEFAULT_SHARE_PATH
                 val workgroup = intent.getStringExtra(EXTRA_WORKGROUP)
                     ?: SmbConfigGenerator.DEFAULT_WORKGROUP
-                startSmb(shareName, sharePath, workgroup)
+                val readOnly = intent.getBooleanExtra(EXTRA_READ_ONLY, false)
+                startSmb(shareName, sharePath, workgroup, readOnly)
             }
             ACTION_STOP -> {
                 stopSmb()
@@ -70,12 +72,12 @@ class SmbService : Service() {
         return START_REDELIVER_INTENT
     }
 
-    private fun startSmb(shareName: String, sharePath: String, workgroup: String) {
+    private fun startSmb(shareName: String, sharePath: String, workgroup: String, readOnly: Boolean) {
         startForegroundNotification()
 
         serviceScope.launch {
             try {
-                val result = processManager.start(shareName, sharePath, workgroup)
+                val result = processManager.start(shareName, sharePath, workgroup, readOnly)
                 if (result.success) {
                     isSmbRunning = true
                     updateNotification(true)

@@ -9,6 +9,7 @@
     <string name="smb_share_name">共享名称</string>
     <string name="smb_share_path">共享路径</string>
     <string name="smb_workgroup">工作组</string>
+    <string name="smb_read_only">只读模式 (禁止写入/删除)</string>
     <string name="smb_install_deps">安装 SMB 依赖</string>
     <string name="smb_downloading">下载中…</string>
     <string name="smb_installing">安装中…</string>
