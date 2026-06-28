@@ -70,6 +70,8 @@ class MainActivity : AppCompatActivity() {
         get() = findViewById(R.id.btn_copy_log)
     private val switchReadOnly: com.google.android.material.materialswitch.MaterialSwitch?
         get() = findViewById(R.id.switch_read_only)
+    private val switchSecureMode: com.google.android.material.materialswitch.MaterialSwitch?
+        get() = findViewById(R.id.switch_secure_mode)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -150,6 +152,9 @@ class MainActivity : AppCompatActivity() {
             val workgroup = etWorkgroup?.text?.toString()?.trim()?.takeIf { it.isNotBlank() }
                 ?: SmbConfigGenerator.DEFAULT_WORKGROUP
             val readOnly = switchReadOnly?.isChecked == true
+            val secureMode = switchSecureMode?.isChecked == true
+            // 安全模式开启时, 由当前局域网 IP 推导 /24 网段作为 hosts allow, 限定来源
+            val hostsAllow = if (secureMode) SmbConfigGenerator().lanPrefixFromIp(lanIp) else null
 
             val intent = Intent(this@MainActivity, SmbService::class.java).apply {
                 action = SmbService.ACTION_START
@@ -157,8 +162,18 @@ class MainActivity : AppCompatActivity() {
                 putExtra(SmbService.EXTRA_SHARE_PATH, sharePath)
                 putExtra(SmbService.EXTRA_WORKGROUP, workgroup)
                 putExtra(SmbService.EXTRA_READ_ONLY, readOnly)
+                putExtra(SmbService.EXTRA_SECURE_MODE, secureMode)
+                if (hostsAllow != null) putExtra(SmbService.EXTRA_HOSTS_ALLOW, hostsAllow)
             }
             if (readOnly) appendLog("只读模式: 客户端不可写入")
+            if (secureMode) {
+                appendLog("安全模式: 强制加密传输")
+                if (hostsAllow != null) {
+                    appendLog("安全模式: 仅允许网段 $hostsAllow 访问")
+                } else {
+                    appendLog("安全模式: 未能由 IP 推导网段, 跳过 hosts allow")
+                }
+            }
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 startForegroundService(intent)

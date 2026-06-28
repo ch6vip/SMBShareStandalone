@@ -28,7 +28,9 @@ class SmbProcessManager {
         shareName: String = SmbConfigGenerator.DEFAULT_SHARE_NAME,
         sharePath: String = SmbConfigGenerator.DEFAULT_SHARE_PATH,
         workgroup: String = SmbConfigGenerator.DEFAULT_WORKGROUP,
-        readOnly: Boolean = false
+        readOnly: Boolean = false,
+        secureMode: Boolean = false,
+        hostsAllow: String? = null
     ): StartResult {
         return withContext(Dispatchers.IO) {
             try {
@@ -58,6 +60,8 @@ class SmbProcessManager {
                     sharePath = sharePath,
                     workgroup = workgroup,
                     readOnly = readOnly,
+                    secureMode = secureMode,
+                    hostsAllow = hostsAllow,
                     shellExecutor = shellExecutor
                 )
                 if (!configWritten) {

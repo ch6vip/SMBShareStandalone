@@ -165,6 +165,15 @@
                         android:textSize="14sp"
                         android:checked="false" />
 
+                    <com.google.android.material.materialswitch.MaterialSwitch
+                        android:id="@+id/switch_secure_mode"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:text="@string/smb_secure_mode"
+                        android:textSize="14sp"
+                        android:checked="false" />
+
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
