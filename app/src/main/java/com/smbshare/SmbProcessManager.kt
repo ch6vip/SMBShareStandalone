@@ -74,7 +74,9 @@ class SmbProcessManager {
                     append("${SmbConfigGenerator.SMB_EXECUTABLE} -D -s ${SmbConfigGenerator.DEFAULT_CONFIG_PATH} </dev/null >/dev/null 2>&1\n")
                 }
 
-                val smbResult = shellExecutor.execute(startScript, asRoot = true)
+                // smbd0 -D 自身 fork 成 daemon 后立即返回, 直接 exitCode 不可靠 (fd 已重定向),
+                // 真正的成功判定靠下方 pidof, 故此处不消费返回值。
+                shellExecutor.execute(startScript, asRoot = true)
 
                 // 8. 等待并验证是否成功启动
                 shellExecutor.execute("sleep 2", asRoot = true)
@@ -103,9 +105,9 @@ class SmbProcessManager {
             try {
                 stopExistingInstances()
 
-                // 清理配置文件 (可选，保留的话下次可直接启动)
-                val configResult = shellExecutor.execute(
-                    "rm -f ${SmbConfigGenerator.DEFAULT_CONFIG_PATH}",
+                // 清理配置文件 (可选，保留的话下次可直接启动); rm -f 必成功, 无需消费返回值
+                shellExecutor.execute(
+                    "rm -f \"${SmbConfigGenerator.DEFAULT_CONFIG_PATH}\"",
                     asRoot = true
                 )
 
@@ -135,7 +137,7 @@ class SmbProcessManager {
             SmbConfigGenerator.DEFAULT_CONFIG_PATH
         )
         for (file in checkFiles) {
-            val result = shellExecutor.execute("test -f $file && echo OK || echo MISSING", asRoot = true)
+            val result = shellExecutor.execute("test -f \"$file\" && echo OK || echo MISSING", asRoot = true)
             sb.appendLine("$file: ${result.stdout?.trim() ?: "?"}")
         }
 
@@ -143,7 +145,7 @@ class SmbProcessManager {
         // 比起 `smbd0 -i` 前台跑更安全: -i 会尝试监听 445, 可能和现有实例抢端口或留下残余进程
         val testparm = "${SmbConfigGenerator.SMB_INSTALL_DIR}/testparm"
         val parmErr = shellExecutor.execute(
-            "test -f $testparm && $testparm -s ${SmbConfigGenerator.DEFAULT_CONFIG_PATH} 2>&1 | head -8",
+            "test -f \"$testparm\" && \"$testparm\" -s \"${SmbConfigGenerator.DEFAULT_CONFIG_PATH}\" 2>&1 | head -8",
             asRoot = true
         )
         if (!parmErr.output.isNullOrBlank()) {
@@ -168,43 +170,31 @@ class SmbProcessManager {
      */
     private suspend fun stopExistingInstances() {
         val busybox = findBusybox()
-        shellExecutor.execute("$busybox killall -9 smbd0 2>/dev/null", asRoot = true)
-        // 等待进程退出
-        shellExecutor.execute("sleep 1", asRoot = true)
+        // killall 与等待合并为单条命令: 一次 su 调用, 不必为 sleep 单独提权
+        shellExecutor.execute("$busybox killall -9 smbd0 2>/dev/null; sleep 1", asRoot = true)
     }
 
     private suspend fun checkBinaryExists(): Boolean {
         val result = shellExecutor.execute(
-            "test -f ${SmbConfigGenerator.SMB_EXECUTABLE} && echo all_ok",
+            "test -f \"${SmbConfigGenerator.SMB_EXECUTABLE}\" && echo all_ok",
             asRoot = true
         )
         return result.stdout?.contains("all_ok") == true
     }
 
     private suspend fun createDirectories() {
+        // 合并为单条命令: 一次 su 调用即可, 省掉 3 次 fork/exec 的 root 提权开销
         val dirs = listOf(
             SmbConfigGenerator.SMB_INSTALL_DIR,
             SmbConfigGenerator.SMB_LIB_DIR,
             SmbConfigGenerator.SMB_CONFIG_DIR
-        )
-        for (dir in dirs) {
-            shellExecutor.execute("mkdir -p \"$dir\"", asRoot = true)
-        }
+        ).joinToString(" ") { "\"$it\"" }
+        shellExecutor.execute("mkdir -p $dirs", asRoot = true)
     }
 
     private suspend fun findBusybox(): String {
-        val candidates = listOf(
-            "/nitiFile/busybox",
-            "/data/zb/busybox",
-            "/data/assetsFairu/busybox",
-            "/system/xbin/busybox",
-            "/system/bin/busybox"
-        )
-        for (path in candidates) {
-            val result = shellExecutor.execute("test -f $path && echo exists", asRoot = true)
-            if (result.stdout?.contains("exists") == true) return path
-        }
-        return "busybox"
+        // 一次 su 跑完整循环, 替代原先每个候选各一次 su (最多 5 次 root 提权)
+        return BusyboxLocator.find(shellExecutor)
     }
 
     data class StartResult(

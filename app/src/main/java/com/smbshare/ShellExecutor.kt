@@ -24,10 +24,16 @@ class ShellExecutor {
 
     /**
      * 执行多条命令
+     *
+     * 用换行 + `set -e` 拼接, 任意一条失败即中止并返回非零。
+     * 不再用 `($it) && ($it)`: 后者遇到命令内部含 && / 引号 / 重定向时会被括号改变语义。
      */
     suspend fun executeCommands(commands: List<String>, asRoot: Boolean = true): ExecutionResult {
         return withContext(Dispatchers.IO) {
-            val script = commands.joinToString(" && ") { "($it)" }
+            val script = buildString {
+                append("set -e\n")
+                commands.forEach { append(it).append('\n') }
+            }
             executeInternal(script, asRoot)
         }
     }

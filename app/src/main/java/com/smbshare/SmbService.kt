@@ -29,6 +29,8 @@ class SmbService : Service() {
     private val binder = LocalBinder()
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val processManager = SmbProcessManager()
+    // 跨协程 (前台服务 IO 与通知更新) 读写, @Volatile 保证可见性
+    @Volatile
     private var isSmbRunning = false
 
     inner class LocalBinder : Binder() {

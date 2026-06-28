@@ -90,7 +90,7 @@ class SmbAssetDownloader(private val context: Context) {
     private suspend fun copyAssetToFile(assetName: String, destPath: String): Boolean {
         return try {
             val inputStream = context.assets.open(assetName)
-            // 先写到 app 私有目录，再 mv 到目标 (避免跨用户权限问题)
+            // 先写到 app 私有目录 (无需 root), 再用 root cat 到目标路径 (跨用户写 /data)
             val tmpFile = File(context.cacheDir, assetName)
             val outputStream = FileOutputStream(tmpFile)
             val buffer = ByteArray(8192)
@@ -127,25 +127,9 @@ class SmbAssetDownloader(private val context: Context) {
     }
 
     /**
-     * 查找 busybox 路径
+     * 查找 busybox 路径 (委托共享 [BusyboxLocator], 候选列表唯一事实源)
      */
-    private suspend fun findBusybox(): String {
-        val candidates = listOf(
-            "/nitiFile/busybox",
-            "/data/zb/busybox",
-            "/data/assetsFairu/busybox",
-            "/system/xbin/busybox",
-            "/system/bin/busybox",
-            "/data/local/tmp/busybox"
-        )
-        for (path in candidates) {
-            val result = shellExecutor.execute("test -f $path && echo exists", asRoot = true)
-            if (result.stdout?.contains("exists") == true) {
-                return path
-            }
-        }
-        return "busybox" // fallback to PATH
-    }
+    private suspend fun findBusybox(): String = BusyboxLocator.find(shellExecutor)
 
     /**
      * 检查 smb3.tgz 是否已安装
