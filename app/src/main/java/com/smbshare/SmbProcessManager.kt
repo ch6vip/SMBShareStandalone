@@ -1,6 +1,7 @@
 package com.smbshare
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 
 /**
@@ -54,8 +55,7 @@ class SmbProcessManager {
                 createDirectories()
 
                 // 5. 生成 smb.conf
-                val configGen = SmbConfigGenerator()
-                val configWritten = configGen.writeConfigFile(
+                val configWritten = SmbConfigGenerator.writeConfigFile(
                     shareName = shareName,
                     sharePath = sharePath,
                     workgroup = workgroup,
@@ -82,8 +82,9 @@ class SmbProcessManager {
                 // 真正的成功判定靠下方 pidof, 故此处不消费返回值。
                 shellExecutor.execute(startScript, asRoot = true)
 
-                // 8. 等待并验证是否成功启动
-                shellExecutor.execute("sleep 2", asRoot = true)
+                // 7. 等待并验证是否成功启动
+                // 使用协程 delay 而非 shell sleep: 正确挂起协程而不占用 IO 线程
+                delay(2000)
                 if (isRunning()) {
                     StartResult(
                         success = true,
@@ -146,7 +147,6 @@ class SmbProcessManager {
         }
 
         // 用 testparm 校验配置语法 (只解析配置, 不 bind 端口, 不会与已有 smbd0 冲突)
-        // 比起 `smbd0 -i` 前台跑更安全: -i 会尝试监听 445, 可能和现有实例抢端口或留下残余进程
         val testparm = "${SmbConfigGenerator.SMB_INSTALL_DIR}/testparm"
         val parmErr = shellExecutor.execute(
             "test -f \"$testparm\" && \"$testparm\" -s \"${SmbConfigGenerator.DEFAULT_CONFIG_PATH}\" 2>&1 | head -8",
@@ -174,8 +174,9 @@ class SmbProcessManager {
      */
     private suspend fun stopExistingInstances() {
         val busybox = findBusybox()
-        // killall 与等待合并为单条命令: 一次 su 调用, 不必为 sleep 单独提权
-        shellExecutor.execute("$busybox killall -9 smbd0 2>/dev/null; sleep 1", asRoot = true)
+        // killall 与等待合并为单条命令: 一次 su 调用, delay 不占 IO 线程
+        shellExecutor.execute("$busybox killall -9 smbd0 2>/dev/null || true", asRoot = true)
+        delay(1000)
     }
 
     private suspend fun checkBinaryExists(): Boolean {
@@ -187,7 +188,7 @@ class SmbProcessManager {
     }
 
     private suspend fun createDirectories() {
-        // 合并为单条命令: 一次 su 调用即可, 省掉 3 次 fork/exec 的 root 提权开销
+        // 合并为单条命令: 一次 su 调用即可, 省掉多次 fork/exec 的 root 提权开销
         val dirs = listOf(
             SmbConfigGenerator.SMB_INSTALL_DIR,
             SmbConfigGenerator.SMB_LIB_DIR,
@@ -197,7 +198,6 @@ class SmbProcessManager {
     }
 
     private suspend fun findBusybox(): String {
-        // 一次 su 跑完整循环, 替代原先每个候选各一次 su (最多 5 次 root 提权)
         return BusyboxLocator.find(shellExecutor)
     }
 

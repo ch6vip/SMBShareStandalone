@@ -110,7 +110,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="SMB 配置"
+                        android:text="@string/smb_config_section"
                         android:textSize="16sp"
                         android:textStyle="bold"
                         android:layout_marginBottom="12dp" />
@@ -125,7 +125,7 @@
                             android:id="@+id/et_share_name"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:text="rannki_smb"
+                            android:text="android_smb"
                             android:singleLine="true" />
                     </com.google.android.material.textfield.TextInputLayout>
 
@@ -268,7 +268,7 @@
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
                             android:layout_weight="1"
-                            android:text="日志"
+                            android:text="@string/smb_log_section"
                             android:textSize="14sp"
                             android:textStyle="bold" />
 

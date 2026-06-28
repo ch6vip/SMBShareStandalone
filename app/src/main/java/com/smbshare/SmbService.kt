@@ -1,5 +1,6 @@
 package com.smbshare
 
+import android.app.Notification
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
@@ -31,9 +32,6 @@ class SmbService : Service() {
     private val binder = LocalBinder()
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val processManager = SmbProcessManager()
-    // 跨协程 (前台服务 IO 与通知更新) 读写, @Volatile 保证可见性
-    @Volatile
-    private var isSmbRunning = false
 
     inner class LocalBinder : Binder() {
         fun getService(): SmbService = this@SmbService
@@ -64,16 +62,16 @@ class SmbService : Service() {
                 stopSmb()
             }
             else -> {
-                // intent == null: 进程被杀后系统用 START_REDELIVER_INTENT 重新拉起,
+                // intent == null: 进程被杀后系统用 START_REDELIVER_INTENT 重新拉起，
                 // 但 redeliver 失败或异常路径下 intent 仍可能为 null。
-                // startForegroundService 后必须在 5s 内 startForeground, 否则
-                // 抛 RemoteServiceException / ANR, 所以这里先把通知顶上再自我了结。
-                startForegroundNotification()
+                // startForegroundService 后必须在 5s 内 startForeground，否则抛异常，
+                // 所以这里先把通知顶上再自我了结。
+                startForeground(SmbShareApp.NOTIFICATION_ID, buildNotification(running = false, initializing = false))
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
             }
         }
-        // 用 REDELIVER_INTENT: 被杀后系统会带着原始 intent(含 share 配置) 重新投递,
+        // 用 REDELIVER_INTENT: 被杀后系统会带着原始 intent(含 share 配置) 重新投递，
         // 而非 START_STICKY 的 null intent。
         return START_REDELIVER_INTENT
     }
@@ -86,22 +84,20 @@ class SmbService : Service() {
         secureMode: Boolean,
         hostsAllow: String?
     ) {
-        startForegroundNotification()
+        startForeground(SmbShareApp.NOTIFICATION_ID, buildNotification(running = false, initializing = true))
 
         serviceScope.launch {
             try {
                 val result = processManager.start(
                     shareName, sharePath, workgroup, readOnly, secureMode, hostsAllow
                 )
-                if (result.success) {
-                    isSmbRunning = true
-                    updateNotification(true)
+                val running = result.success
+                // updateNotification 涉及 NotificationManager，可在任意线程调用
+                updateNotification(running)
+                if (running) {
                     Log.i(TAG, "SMB started: ${result.message}")
                 } else {
-                    isSmbRunning = false
-                    updateNotification(false)
                     Log.e(TAG, "SMB start failed: ${result.message}")
-                    // 如果启动失败，停止服务
                     stopSelf()
                 }
             } catch (e: Exception) {
@@ -112,21 +108,29 @@ class SmbService : Service() {
     }
 
     private fun stopSmb() {
+        // stopForeground 在主线程立即执行，防止协程被取消时通知残留
+        stopForeground(STOP_FOREGROUND_REMOVE)
+
         serviceScope.launch {
             try {
                 processManager.stop()
-                isSmbRunning = false
                 Log.i(TAG, "SMB stopped")
             } catch (e: Exception) {
                 Log.e(TAG, "SMB stop error", e)
             }
-            stopForeground(STOP_FOREGROUND_REMOVE)
+            // stopSelf 是线程安全的，可在协程中调用
             stopSelf()
         }
     }
 
-    private fun startForegroundNotification() {
-        val pendingIntent = PendingIntent.getActivity(
+    /**
+     * 构建前台服务通知（统一入口，消除重复代码）
+     *
+     * @param running  true = 运行中，false = 已停止/启动中
+     * @param initializing true = 启动中文案，仅在 running=false 时有效
+     */
+    private fun buildNotification(running: Boolean, initializing: Boolean = false): Notification {
+        val contentIntent = PendingIntent.getActivity(
             this,
             0,
             Intent(this, MainActivity::class.java),
@@ -140,51 +144,29 @@ class SmbService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val notification = NotificationCompat.Builder(this, SmbShareApp.NOTIFICATION_CHANNEL_ID)
-            .setContentTitle("SMB 文件共享")
-            .setContentText("SMB 服务启动中…")
-            .setSmallIcon(android.R.drawable.ic_menu_share)
-            .setOngoing(true)
-            .setContentIntent(pendingIntent)
-            .addAction(android.R.drawable.ic_media_pause, "停止", stopIntent)
-            .build()
+        val contentText = when {
+            running -> getString(R.string.notification_running)
+            initializing -> getString(R.string.notification_starting)
+            else -> getString(R.string.notification_stopped)
+        }
 
-        startForeground(SmbShareApp.NOTIFICATION_ID, notification)
-    }
-
-    private fun updateNotification(running: Boolean) {
-        val pendingIntent = PendingIntent.getActivity(
-            this,
-            0,
-            Intent(this, MainActivity::class.java),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-
-        val stopIntent = PendingIntent.getService(
-            this,
-            1,
-            Intent(this, SmbService::class.java).apply { action = ACTION_STOP },
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-
-        val notification = NotificationCompat.Builder(this, SmbShareApp.NOTIFICATION_CHANNEL_ID)
-            .setContentTitle("SMB 文件共享")
-            .setContentText(
-                if (running) "SMB 服务运行中 — 设备可被局域网其他设备访问"
-                else "SMB 服务已停止"
-            )
+        return NotificationCompat.Builder(this, SmbShareApp.NOTIFICATION_CHANNEL_ID)
+            .setContentTitle(getString(R.string.notification_title))
+            .setContentText(contentText)
             .setSmallIcon(android.R.drawable.ic_menu_share)
             .setOngoing(running)
-            .setContentIntent(pendingIntent)
+            .setContentIntent(contentIntent)
             .apply {
                 if (running) {
-                    addAction(android.R.drawable.ic_media_pause, "停止", stopIntent)
+                    addAction(android.R.drawable.ic_media_pause, getString(R.string.notification_stop_action), stopIntent)
                 }
             }
             .build()
+    }
 
+    private fun updateNotification(running: Boolean) {
         val manager = getSystemService(NOTIFICATION_SERVICE) as android.app.NotificationManager
-        manager.notify(SmbShareApp.NOTIFICATION_ID, notification)
+        manager.notify(SmbShareApp.NOTIFICATION_ID, buildNotification(running))
     }
 
     override fun onDestroy() {

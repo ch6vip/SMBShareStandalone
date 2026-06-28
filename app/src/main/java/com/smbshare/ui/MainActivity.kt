@@ -13,7 +13,11 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
+import com.google.android.material.button.MaterialButton
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.android.material.materialswitch.MaterialSwitch
+import com.google.android.material.progressindicator.LinearProgressIndicator
+import com.google.android.material.textfield.TextInputEditText
 import com.smbshare.R
 import com.smbshare.ShellExecutor
 import com.smbshare.SmbAssetDownloader
@@ -29,6 +33,7 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         private const val TAG = "MainActivity"
+        private const val MAX_LOG_LINES = 100
     }
 
     private val processManager = SmbProcessManager()
@@ -40,49 +45,51 @@ class MainActivity : AppCompatActivity() {
         ActivityResultContracts.RequestPermission()
     ) { /* 用户拒绝也不阻断主流程, 仅通知栏不显示 */ }
 
+    // 视图引用在 onCreate 中一次性绑定，避免每次访问都 findViewById
     private lateinit var tvStatus: TextView
-    private lateinit var tvStatusLabel: TextView
     private lateinit var tvDeviceIp: TextView
     private lateinit var tvConnectInfo: TextView
     private lateinit var tvLog: TextView
     private lateinit var tvProgress: TextView
+    private lateinit var etShareName: TextInputEditText
+    private lateinit var etSharePath: TextInputEditText
+    private lateinit var etWorkgroup: TextInputEditText
+    private lateinit var btnStart: MaterialButton
+    private lateinit var btnStop: MaterialButton
+    private lateinit var btnInstall: MaterialButton
+    private lateinit var btnCopyLog: MaterialButton
+    private lateinit var progressBar: LinearProgressIndicator
+    private lateinit var layoutProgress: android.widget.LinearLayout
+    private lateinit var switchReadOnly: MaterialSwitch
+    private lateinit var switchSecureMode: MaterialSwitch
     private var statusIndicator: android.view.View? = null
 
-    private val viewStatusIndicator: android.view.View?
-        get() = findViewById(R.id.view_status_indicator)
-    private val etShareName: com.google.android.material.textfield.TextInputEditText?
-        get() = findViewById(R.id.et_share_name)
-    private val etSharePath: com.google.android.material.textfield.TextInputEditText?
-        get() = findViewById(R.id.et_share_path)
-    private val etWorkgroup: com.google.android.material.textfield.TextInputEditText?
-        get() = findViewById(R.id.et_workgroup)
-    private val btnStart: com.google.android.material.button.MaterialButton?
-        get() = findViewById(R.id.btn_start)
-    private val btnStop: com.google.android.material.button.MaterialButton?
-        get() = findViewById(R.id.btn_stop)
-    private val btnInstall: com.google.android.material.button.MaterialButton?
-        get() = findViewById(R.id.btn_install)
-    private val progressBar: com.google.android.material.progressindicator.LinearProgressIndicator?
-        get() = findViewById(R.id.progress_bar)
-    private val layoutProgress: android.widget.LinearLayout?
-        get() = findViewById(R.id.layout_progress)
-    private val btnCopyLog: com.google.android.material.button.MaterialButton?
-        get() = findViewById(R.id.btn_copy_log)
-    private val switchReadOnly: com.google.android.material.materialswitch.MaterialSwitch?
-        get() = findViewById(R.id.switch_read_only)
-    private val switchSecureMode: com.google.android.material.materialswitch.MaterialSwitch?
-        get() = findViewById(R.id.switch_secure_mode)
+    // 日志行数计数器，避免每次 appendLog 都全量 text.lines() 扫描
+    private var logLineCount = 0
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
+        // 一次性绑定所有视图
         tvStatus = findViewById(R.id.tv_status)
         tvDeviceIp = findViewById(R.id.tv_device_ip)
         tvConnectInfo = findViewById(R.id.tv_connect_info)
         tvLog = findViewById(R.id.tv_log)
         tvProgress = findViewById(R.id.tv_progress)
-        statusIndicator = viewStatusIndicator
+        statusIndicator = findViewById(R.id.view_status_indicator)
+        etShareName = findViewById(R.id.et_share_name)
+        etSharePath = findViewById(R.id.et_share_path)
+        etWorkgroup = findViewById(R.id.et_workgroup)
+        btnStart = findViewById(R.id.btn_start)
+        btnStop = findViewById(R.id.btn_stop)
+        btnInstall = findViewById(R.id.btn_install)
+        btnCopyLog = findViewById(R.id.btn_copy_log)
+        progressBar = findViewById(R.id.progress_bar)
+        layoutProgress = findViewById(R.id.layout_progress)
+        switchReadOnly = findViewById(R.id.switch_read_only)
+        switchSecureMode = findViewById(R.id.switch_secure_mode)
+
         downloader = SmbAssetDownloader(this)
 
         setupClickListeners()
@@ -102,18 +109,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupClickListeners() {
-        btnStart?.setOnClickListener {
-            startSmbService()
-        }
-        btnStop?.setOnClickListener {
-            stopSmbService()
-        }
-        btnInstall?.setOnClickListener {
-            installDependencies()
-        }
-        btnCopyLog?.setOnClickListener {
-            copyLogToClipboard()
-        }
+        btnStart.setOnClickListener { startSmbService() }
+        btnStop.setOnClickListener { stopSmbService() }
+        btnInstall.setOnClickListener { installDependencies() }
+        btnCopyLog.setOnClickListener { copyLogToClipboard() }
     }
 
     private fun startSmbService() {
@@ -145,16 +144,16 @@ class MainActivity : AppCompatActivity() {
             // 启动 foreground service
             // takeIf { isNotBlank() }: ?: 只挡 null, 挡不住空串/纯空格,
             // 否则用户清空输入框会生成非法的 [] share 名导致 smbd 异常
-            val shareName = etShareName?.text?.toString()?.trim()?.takeIf { it.isNotBlank() }
+            val shareName = etShareName.text?.toString()?.trim()?.takeIf { it.isNotBlank() }
                 ?: SmbConfigGenerator.DEFAULT_SHARE_NAME
-            val sharePath = etSharePath?.text?.toString()?.trim()?.takeIf { it.isNotBlank() }
+            val sharePath = etSharePath.text?.toString()?.trim()?.takeIf { it.isNotBlank() }
                 ?: SmbConfigGenerator.DEFAULT_SHARE_PATH
-            val workgroup = etWorkgroup?.text?.toString()?.trim()?.takeIf { it.isNotBlank() }
+            val workgroup = etWorkgroup.text?.toString()?.trim()?.takeIf { it.isNotBlank() }
                 ?: SmbConfigGenerator.DEFAULT_WORKGROUP
-            val readOnly = switchReadOnly?.isChecked == true
-            val secureMode = switchSecureMode?.isChecked == true
-            // 安全模式开启时, 由当前局域网 IP 推导 /24 网段作为 hosts allow, 限定来源
-            val hostsAllow = if (secureMode) SmbConfigGenerator().lanPrefixFromIp(lanIp) else null
+            val readOnly = switchReadOnly.isChecked
+            val secureMode = switchSecureMode.isChecked
+            // 安全模式开启时，由当前局域网 IP 推导 /24 网段作为 hosts allow，限定来源
+            val hostsAllow = if (secureMode) SmbConfigGenerator.lanPrefixFromIp(lanIp) else null
 
             val intent = Intent(this@MainActivity, SmbService::class.java).apply {
                 action = SmbService.ACTION_START
@@ -190,6 +189,7 @@ class MainActivity : AppCompatActivity() {
 
                 val running = withContext(Dispatchers.IO) { processManager.isRunning() }
                 if (running) {
+                    // IP 可能在延迟期间变更，重新获取一次
                     val ip = withContext(Dispatchers.IO) {
                         NetworkUtils.getWifiIpAddress()
                             ?: NetworkUtils.getWifiIpFromManager(this@MainActivity)
@@ -226,20 +226,20 @@ class MainActivity : AppCompatActivity() {
     private fun installDependencies() {
         lifecycleScope.launch {
             try {
-                layoutProgress?.visibility = android.view.View.VISIBLE
-                progressBar?.progress = 0
+                layoutProgress.visibility = android.view.View.VISIBLE
+                progressBar.progress = 0
 
                 val success = downloader.installSmbDependencies(
                     onProgress = { message, progress ->
                         runOnUiThread {
                             tvProgress.text = message
-                            progressBar?.progress = (progress * 100).toInt()
+                            progressBar.progress = (progress * 100).toInt()
                             appendLog(message)
                         }
                     }
                 )
 
-                layoutProgress?.visibility = android.view.View.GONE
+                layoutProgress.visibility = android.view.View.GONE
 
                 if (success) {
                     Toast.makeText(this@MainActivity, "安装完成", Toast.LENGTH_SHORT).show()
@@ -252,7 +252,7 @@ class MainActivity : AppCompatActivity() {
                         .show()
                 }
             } catch (e: Exception) {
-                layoutProgress?.visibility = android.view.View.GONE
+                layoutProgress.visibility = android.view.View.GONE
                 appendLog("安装出错: ${e.message}")
             }
         }
@@ -282,16 +282,15 @@ class MainActivity : AppCompatActivity() {
                     tvStatus.text = getString(R.string.smb_running)
                     tvStatus.setTextColor(getColor(com.google.android.material.R.color.material_dynamic_primary40))
                     statusIndicator?.setBackgroundResource(R.drawable.circle_green)
-                    btnStart?.isEnabled = false
-                    btnStop?.isEnabled = true
+                    btnStart.isEnabled = false
+                    btnStop.isEnabled = true
 
                     if (ip != null) {
                         tvDeviceIp.text = getString(R.string.device_ip, ip)
                         tvDeviceIp.visibility = android.view.View.VISIBLE
 
-                        val shareName =
-                            etShareName?.text?.toString()?.trim()?.takeIf { it.isNotBlank() }
-                                ?: SmbConfigGenerator.DEFAULT_SHARE_NAME
+                        val shareName = etShareName.text?.toString()?.trim()?.takeIf { it.isNotBlank() }
+                            ?: SmbConfigGenerator.DEFAULT_SHARE_NAME
                         tvConnectInfo.text = getString(R.string.connect_info, ip, shareName)
                         tvConnectInfo.visibility = android.view.View.VISIBLE
                     }
@@ -299,8 +298,8 @@ class MainActivity : AppCompatActivity() {
                     tvStatus.text = getString(R.string.smb_stopped)
                     tvStatus.setTextColor(getColor(android.R.color.darker_gray))
                     statusIndicator?.setBackgroundResource(R.drawable.circle_red)
-                    btnStart?.isEnabled = true
-                    btnStop?.isEnabled = false
+                    btnStart.isEnabled = true
+                    btnStop.isEnabled = false
                     tvDeviceIp.visibility = android.view.View.INVISIBLE
                     tvConnectInfo.visibility = android.view.View.INVISIBLE
                 }
@@ -321,11 +320,13 @@ class MainActivity : AppCompatActivity() {
             val timestamp = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault())
                 .format(java.util.Date())
             tvLog.append("\n[$timestamp] $message")
+            logLineCount++
 
-            // 限制日志行数
-            val lines = tvLog.text.lines()
-            if (lines.size > 100) {
-                tvLog.text = lines.takeLast(100).joinToString("\n")
+            // 超出限制时裁剪旧日志（计数器比每次 text.lines() 全量扫描更高效）
+            if (logLineCount > MAX_LOG_LINES) {
+                val lines = tvLog.text.split("\n")
+                tvLog.text = lines.takeLast(MAX_LOG_LINES).joinToString("\n")
+                logLineCount = MAX_LOG_LINES
             }
         }
     }

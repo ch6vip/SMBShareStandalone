@@ -14,10 +14,6 @@ class SmbAssetDownloader(private val context: Context) {
 
     private val shellExecutor = ShellExecutor()
 
-    // ===================================================================
-    //  Assets 安装 (主路径)
-    // ===================================================================
-
     /**
      * 从 APK assets 安装 SMB 依赖
      * 将内置的 smb3.tgz 释放到 /data/local/tmp 然后解压到 /data/zb/
@@ -44,7 +40,7 @@ class SmbAssetDownloader(private val context: Context) {
                 val tmpPath = "/data/local/tmp/smb3.tgz"
                 val copied = copyAssetToFile("smb3.tgz", tmpPath)
                 if (!copied) {
-                    onProgress?.invoke("assets 中未找到 smb3.tgz", 0f)
+                    onProgress?.invoke("assets 中未找到 smb3.tgz", 0.1f)
                     return@withContext false
                 }
 
@@ -60,7 +56,7 @@ class SmbAssetDownloader(private val context: Context) {
                     asRoot = true
                 )
                 if (!extractResult.isSuccess) {
-                    onProgress?.invoke("解压失败", 0f)
+                    onProgress?.invoke("解压失败", 0.7f)
                     shellExecutor.execute("rm -f $tmpPath", asRoot = true)
                     return@withContext false
                 }
@@ -88,29 +84,32 @@ class SmbAssetDownloader(private val context: Context) {
      * 将 assets 中的文件复制到设备路径 (需要 root 写入 /data)
      */
     private suspend fun copyAssetToFile(assetName: String, destPath: String): Boolean {
+        val tmpFile = File(context.cacheDir, assetName)
         return try {
             val inputStream = context.assets.open(assetName)
-            // 先写到 app 私有目录 (无需 root), 再用 root cat 到目标路径 (跨用户写 /data)
-            val tmpFile = File(context.cacheDir, assetName)
-            val outputStream = FileOutputStream(tmpFile)
-            val buffer = ByteArray(8192)
-            var bytesRead: Int
-            while (inputStream.read(buffer).also { bytesRead = it } != -1) {
-                outputStream.write(buffer, 0, bytesRead)
+            // 先写到 app 私有目录 (无需 root)，再用 root cat 到目标路径 (跨用户写 /data)
+            FileOutputStream(tmpFile).use { outputStream ->
+                inputStream.use { ins ->
+                    val buffer = ByteArray(8192)
+                    var bytesRead: Int
+                    while (ins.read(buffer).also { bytesRead = it } != -1) {
+                        outputStream.write(buffer, 0, bytesRead)
+                    }
+                    outputStream.flush()
+                }
             }
-            outputStream.flush()
-            outputStream.close()
-            inputStream.close()
 
-            // 用 root mv 到目标路径
+            // 路径加引号，防止路径含空格时 shell 解析出错
             val result = shellExecutor.execute(
-                "cat ${tmpFile.absolutePath} > $destPath && chmod 644 $destPath",
+                "cat \"${tmpFile.absolutePath}\" > \"$destPath\" && chmod 644 \"$destPath\"",
                 asRoot = true
             )
-            tmpFile.delete()
             result.isSuccess
         } catch (e: Exception) {
             false
+        } finally {
+            // 无论成功/异常，确保临时文件被清理
+            tmpFile.delete()
         }
     }
 
@@ -143,14 +142,11 @@ class SmbAssetDownloader(private val context: Context) {
     }
 
     /**
-     * 一键安装 SMB 依赖
-     * 全部依赖已内置在 APK assets (smb3.tgz)，直接释放安装，不走网络。
+     * 一键安装 SMB 依赖（直接委托 installFromAssets，全部依赖已内置在 APK assets）
      */
     suspend fun installSmbDependencies(
         onProgress: ((String, Float) -> Unit)? = null
-    ): Boolean {
-        return installFromAssets(onProgress)
-    }
+    ): Boolean = installFromAssets(onProgress)
 
     private suspend fun stopExistingServices() {
         val busyboxPath = findBusybox()

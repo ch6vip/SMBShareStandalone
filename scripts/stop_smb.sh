@@ -9,9 +9,9 @@ echo "========================================"
 echo "  SMB Share Standalone — 停止脚本"
 echo "========================================"
 
-# 查找 busybox
+# 查找 busybox (候选列表与 start_smb.sh / BusyboxLocator.kt 保持一致)
 BUSYBOX=""
-for B in /nitiFile/busybox /data/assetsFairu/busybox /system/xbin/busybox /system/bin/busybox; do
+for B in /nitiFile/busybox /data/assetsFairu/busybox /data/zb/busybox /data/local/tmp/busybox /system/xbin/busybox /system/bin/busybox; do
     if [ -f "$B" ]; then
         BUSYBOX="$B"
         break

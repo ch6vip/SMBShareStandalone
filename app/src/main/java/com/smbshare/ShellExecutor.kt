@@ -1,7 +1,9 @@
 package com.smbshare
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import java.util.concurrent.TimeUnit
 
 /**
  * Root shell 执行器
@@ -105,16 +107,25 @@ class ShellExecutor {
         stdoutThread.start()
         stderrThread.start()
 
-        val exitCode = process.waitFor()
-        // 等读取线程把残余输出排空
-        stdoutThread.join()
-        stderrThread.join()
+        // 设置超时 (30s)，防止 shell 命令永久阻塞 IO 线程；
+        // waitFor(timeout) 在 API 26+ 可用 (minSdk = 26 故无需版本判断)
+        val finished = process.waitFor(30, TimeUnit.SECONDS)
+        if (!finished) {
+            process.destroyForcibly()
+        }
+        // 等读取线程把残余输出排空 (最多再等 2s)
+        stdoutThread.join(2000)
+        stderrThread.join(2000)
         process.destroy()
+
+        val exitCode = if (finished) process.exitValue() else -1
 
         return ExecutionResult(
             exitCode = exitCode,
             stdout = stdout.toString().trimEnd(),
-            stderr = stderr.toString().trimEnd()
+            stderr = stderr.toString().trimEnd().let {
+                if (!finished) "[TIMEOUT] $it".trimEnd() else it
+            }
         )
     }
 
